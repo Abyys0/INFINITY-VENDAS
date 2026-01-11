@@ -1,0 +1,19 @@
+{
+  "name": "infinity-vendas",
+  "version": "1.0.0",
+  "description": "Bot de vendas INFINITY para Discord",
+  "main": "src/bot.js",
+  "scripts": {
+    "start": "node src/bot.js"
+  },
+  "keywords": ["discord", "bot", "vendas", "infinity"],
+  "author": "INFINITY",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
