@@ -1,4 +1,5 @@
 require('dotenv').config();
+const http = require('http');
 const { 
   Client, 
   GatewayIntentBits, 
@@ -13,10 +14,26 @@ const {
   TextInputStyle,
   StringSelectMenuBuilder,
   ChannelType,
-  PermissionsBitField
+  PermissionsBitField,
+  MessageFlags
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+
+// ==================== SERVIDOR HTTP PARA RENDER ====================
+const PORT = process.env.PORT || 3000;
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ 
+    status: 'online', 
+    bot: 'INFINITY VENDAS',
+    uptime: process.uptime()
+  }));
+});
+
+server.listen(PORT, () => {
+  console.log(`🌐 Servidor HTTP rodando na porta ${PORT}`);
+});
 
 // ==================== CONFIGURAÇÕES ====================
 const GUILD_ID = process.env.GUILD_ID;
@@ -331,7 +348,7 @@ async function updateProductMessage(product) {
 }
 
 // ==================== EVENTO READY ====================
-client.once('ready', async () => {
+client.once('clientReady', async () => {
   console.log(`
 ╔══════════════════════════════════════════════════╗
 ║         🛒 INFINITY VENDAS - BOT ATIVO           ║
@@ -361,7 +378,7 @@ client.on('interactionCreate', async (interaction) => {
   // ========== COMANDO /painelvendas ==========
   if (interaction.isChatInputCommand() && interaction.commandName === 'painelvendas') {
     const panel = createAdminPanel();
-    await interaction.reply({ embeds: [panel.embed], components: panel.components, ephemeral: true });
+    await interaction.reply({ embeds: [panel.embed], components: panel.components, flags: MessageFlags.Ephemeral });
   }
 
   // ========== BOTÕES ==========
@@ -423,7 +440,7 @@ client.on('interactionCreate', async (interaction) => {
       if (products.length === 0) {
         return interaction.reply({ 
           content: '📭 Nenhum produto cadastrado.\nClique em **➕ Adicionar Produto** para começar!', 
-          ephemeral: true 
+          flags: MessageFlags.Ephemeral 
         });
       }
 
@@ -435,14 +452,14 @@ client.on('interactionCreate', async (interaction) => {
         ).join('\n\n'))
         .setFooter({ text: `Total: ${products.length} produtos` });
 
-      await interaction.reply({ embeds: [embed], ephemeral: true });
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 
     // ----- PAINEL ADMIN: Editar Produto -----
     if (customId === 'admin_edit') {
       const products = getAllProducts();
       if (products.length === 0) {
-        return interaction.reply({ content: '📭 Nenhum produto para editar.', ephemeral: true });
+        return interaction.reply({ content: '📭 Nenhum produto para editar.', flags: MessageFlags.Ephemeral });
       }
 
       const options = products.slice(0, 25).map(p => ({
@@ -458,14 +475,14 @@ client.on('interactionCreate', async (interaction) => {
           .addOptions(options)
       );
 
-      await interaction.reply({ content: '✏️ Selecione o produto que deseja editar:', components: [row], ephemeral: true });
+      await interaction.reply({ content: '✏️ Selecione o produto que deseja editar:', components: [row], flags: MessageFlags.Ephemeral });
     }
 
     // ----- PAINEL ADMIN: Remover Produto -----
     if (customId === 'admin_delete') {
       const products = getAllProducts();
       if (products.length === 0) {
-        return interaction.reply({ content: '📭 Nenhum produto para remover.', ephemeral: true });
+        return interaction.reply({ content: '📭 Nenhum produto para remover.', flags: MessageFlags.Ephemeral });
       }
 
       const options = products.slice(0, 25).map(p => ({
@@ -481,14 +498,14 @@ client.on('interactionCreate', async (interaction) => {
           .addOptions(options)
       );
 
-      await interaction.reply({ content: '🗑️ Selecione o produto que deseja remover:', components: [row], ephemeral: true });
+      await interaction.reply({ content: '🗑️ Selecione o produto que deseja remover:', components: [row], flags: MessageFlags.Ephemeral });
     }
 
     // ----- PAINEL ADMIN: Enviar no Canal -----
     if (customId === 'admin_send') {
       const products = getAllProducts();
       if (products.length === 0) {
-        return interaction.reply({ content: '📭 Nenhum produto para enviar.', ephemeral: true });
+        return interaction.reply({ content: '📭 Nenhum produto para enviar.', flags: MessageFlags.Ephemeral });
       }
 
       const options = products.slice(0, 25).map(p => ({
@@ -504,14 +521,14 @@ client.on('interactionCreate', async (interaction) => {
           .addOptions(options)
       );
 
-      await interaction.reply({ content: '📢 Selecione o produto para enviar no canal:', components: [row], ephemeral: true });
+      await interaction.reply({ content: '📢 Selecione o produto para enviar no canal:', components: [row], flags: MessageFlags.Ephemeral });
     }
 
     // ----- PAINEL ADMIN: Alterar Estoque -----
     if (customId === 'admin_stock') {
       const products = getAllProducts();
       if (products.length === 0) {
-        return interaction.reply({ content: '📭 Nenhum produto cadastrado.', ephemeral: true });
+        return interaction.reply({ content: '📭 Nenhum produto cadastrado.', flags: MessageFlags.Ephemeral });
       }
 
       const options = products.slice(0, 25).map(p => ({
@@ -527,7 +544,7 @@ client.on('interactionCreate', async (interaction) => {
           .addOptions(options)
       );
 
-      await interaction.reply({ content: '📦 Selecione o produto para alterar estoque:', components: [row], ephemeral: true });
+      await interaction.reply({ content: '📦 Selecione o produto para alterar estoque:', components: [row], flags: MessageFlags.Ephemeral });
     }
 
     // ----- PAINEL ADMIN: Config Logs -----
@@ -556,7 +573,7 @@ client.on('interactionCreate', async (interaction) => {
       const openTickets = tickets.filter(t => !t.closed);
 
       if (openTickets.length === 0) {
-        return interaction.reply({ content: '🎫 Nenhum ticket aberto no momento.', ephemeral: true });
+        return interaction.reply({ content: '🎫 Nenhum ticket aberto no momento.', flags: MessageFlags.Ephemeral });
       }
 
       const embed = new EmbedBuilder()
@@ -566,7 +583,7 @@ client.on('interactionCreate', async (interaction) => {
           `<#${t.channel_id}> • Produto #${t.product_id} • <@${t.user_id}>`
         ).join('\n'));
 
-      await interaction.reply({ embeds: [embed], ephemeral: true });
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 
     // ----- COMPRAR PRODUTO -----
@@ -575,11 +592,11 @@ client.on('interactionCreate', async (interaction) => {
       const product = getProductById(productId);
 
       if (!product) {
-        return interaction.reply({ content: '❌ Produto não encontrado!', ephemeral: true });
+        return interaction.reply({ content: '❌ Produto não encontrado!', flags: MessageFlags.Ephemeral });
       }
 
       if (product.stock <= 0) {
-        return interaction.reply({ content: '❌ Produto esgotado!', ephemeral: true });
+        return interaction.reply({ content: '❌ Produto esgotado!', flags: MessageFlags.Ephemeral });
       }
 
       // Criar ticket
@@ -588,10 +605,10 @@ client.on('interactionCreate', async (interaction) => {
       if (ticket) {
         await interaction.reply({ 
           content: `🎫 Ticket criado! Acesse ${ticket} para finalizar sua compra.`, 
-          ephemeral: true 
+          flags: MessageFlags.Ephemeral 
         });
       } else {
-        await interaction.reply({ content: '❌ Erro ao criar ticket.', ephemeral: true });
+        await interaction.reply({ content: '❌ Erro ao criar ticket.', flags: MessageFlags.Ephemeral });
       }
     }
 
@@ -601,7 +618,7 @@ client.on('interactionCreate', async (interaction) => {
       const product = getProductById(productId);
 
       if (!product) {
-        return interaction.reply({ content: '❌ Produto não encontrado!', ephemeral: true });
+        return interaction.reply({ content: '❌ Produto não encontrado!', flags: MessageFlags.Ephemeral });
       }
 
       const embed = new EmbedBuilder()
@@ -616,7 +633,7 @@ client.on('interactionCreate', async (interaction) => {
 
       if (product.image_url) embed.setThumbnail(product.image_url);
 
-      await interaction.reply({ embeds: [embed], ephemeral: true });
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 
     // ----- TICKET: Confirmar Entrega -----
@@ -757,7 +774,7 @@ client.on('interactionCreate', async (interaction) => {
     if (customId === 'select_edit') {
       const productId = value.split('_')[1];
       const product = getProductById(productId);
-      if (!product) return interaction.reply({ content: '❌ Produto não encontrado!', ephemeral: true });
+      if (!product) return interaction.reply({ content: '❌ Produto não encontrado!', flags: MessageFlags.Ephemeral });
 
       const modal = new ModalBuilder()
         .setCustomId(`modal_edit_${productId}`)
@@ -813,7 +830,7 @@ client.on('interactionCreate', async (interaction) => {
     if (customId === 'select_delete') {
       const productId = value.split('_')[1];
       const product = getProductById(productId);
-      if (!product) return interaction.reply({ content: '❌ Produto não encontrado!', ephemeral: true });
+      if (!product) return interaction.reply({ content: '❌ Produto não encontrado!', flags: MessageFlags.Ephemeral });
 
       const embed = new EmbedBuilder()
         .setTitle('⚠️ Confirmar Exclusão')
@@ -838,7 +855,7 @@ client.on('interactionCreate', async (interaction) => {
     if (customId === 'select_send') {
       const productId = value.split('_')[1];
       const product = getProductById(productId);
-      if (!product) return interaction.reply({ content: '❌ Produto não encontrado!', ephemeral: true });
+      if (!product) return interaction.reply({ content: '❌ Produto não encontrado!', flags: MessageFlags.Ephemeral });
 
       // Listar canais de texto
       const channels = interaction.guild.channels.cache
@@ -847,7 +864,7 @@ client.on('interactionCreate', async (interaction) => {
         .slice(0, 25);
 
       if (channels.length === 0) {
-        return interaction.reply({ content: '❌ Nenhum canal de texto encontrado.', ephemeral: true });
+        return interaction.reply({ content: '❌ Nenhum canal de texto encontrado.', flags: MessageFlags.Ephemeral });
       }
 
       const row = new ActionRowBuilder().addComponents(
@@ -867,19 +884,19 @@ client.on('interactionCreate', async (interaction) => {
       const product = getProductById(productId);
 
       if (!product) {
-        return interaction.reply({ content: '❌ Produto não encontrado!', ephemeral: true });
+        return interaction.reply({ content: '❌ Produto não encontrado!', flags: MessageFlags.Ephemeral });
       }
 
       const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
       if (!channel) {
-        return interaction.reply({ content: '❌ Canal não encontrado!', ephemeral: true });
+        return interaction.reply({ content: '❌ Canal não encontrado!', flags: MessageFlags.Ephemeral });
       }
 
       const message = await sendProductToChannel(product, channel);
       if (message) {
         await interaction.update({ content: `✅ Produto **${product.name}** enviado em ${channel}!`, components: [] });
       } else {
-        await interaction.reply({ content: '❌ Erro ao enviar produto.', ephemeral: true });
+        await interaction.reply({ content: '❌ Erro ao enviar produto.', flags: MessageFlags.Ephemeral });
       }
     }
 
@@ -887,7 +904,7 @@ client.on('interactionCreate', async (interaction) => {
     if (customId === 'select_stock') {
       const productId = value.split('_')[1];
       const product = getProductById(productId);
-      if (!product) return interaction.reply({ content: '❌ Produto não encontrado!', ephemeral: true });
+      if (!product) return interaction.reply({ content: '❌ Produto não encontrado!', flags: MessageFlags.Ephemeral });
 
       const modal = new ModalBuilder()
         .setCustomId(`modal_stock_${productId}`)
@@ -931,7 +948,7 @@ client.on('interactionCreate', async (interaction) => {
           { name: '🆔 ID', value: `${product.id}`, inline: true }
         );
 
-      await interaction.reply({ embeds: [embed], ephemeral: true });
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 
     // ----- Modal: Editar Produto -----
@@ -948,7 +965,7 @@ client.on('interactionCreate', async (interaction) => {
         await updateProductMessage(updated);
       }
 
-      await interaction.reply({ content: `✅ Produto **${name}** atualizado!`, ephemeral: true });
+      await interaction.reply({ content: `✅ Produto **${name}** atualizado!`, flags: MessageFlags.Ephemeral });
     }
 
     // ----- Modal: Alterar Estoque -----
@@ -961,7 +978,7 @@ client.on('interactionCreate', async (interaction) => {
         await updateProductMessage(updated);
       }
 
-      await interaction.reply({ content: `✅ Estoque atualizado para **${stock}** unidades!`, ephemeral: true });
+      await interaction.reply({ content: `✅ Estoque atualizado para **${stock}** unidades!`, flags: MessageFlags.Ephemeral });
     }
 
     // ----- Modal: Canal de Logs -----
@@ -972,7 +989,7 @@ client.on('interactionCreate', async (interaction) => {
       db.config.logs_channel = channelId;
       saveData(db);
 
-      await interaction.reply({ content: `✅ Canal de logs definido para <#${channelId}>!`, ephemeral: true });
+      await interaction.reply({ content: `✅ Canal de logs definido para <#${channelId}>!`, flags: MessageFlags.Ephemeral });
     }
   }
 });
