@@ -555,33 +555,32 @@ client.on('interactionCreate', async (interaction) => {
   try {
     // ========== COMANDO /painelvendas ==========
     if (interaction.isChatInputCommand() && interaction.commandName === 'painelvendas') {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const panel = createAdminPanel();
-      await interaction.reply({ embeds: [panel.embed], components: panel.components, flags: MessageFlags.Ephemeral });
+      await interaction.editReply({ embeds: [panel.embed], components: panel.components });
       return;
     }
 
     // ========== COMANDO /painelsuporte ==========
     if (interaction.isChatInputCommand() && interaction.commandName === 'painelsuporte') {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       try {
         const supportChannel = await interaction.guild.channels.fetch(SUPPORT_CHANNEL_ID).catch(() => null);
         if (!supportChannel) {
-          return interaction.reply({ 
-            content: `❌ Canal de suporte não encontrado! Verifique o ID: \`${SUPPORT_CHANNEL_ID}\``, 
-            flags: MessageFlags.Ephemeral 
+          await interaction.editReply({ 
+            content: `❌ Canal de suporte não encontrado! Verifique o ID: \`${SUPPORT_CHANNEL_ID}\``
           });
+          return;
         }
 
         const panel = createSupportPanelEmbed();
         await supportChannel.send({ embeds: [panel.embed], components: panel.components });
-        await interaction.reply({ 
-          content: `✅ Painel de suporte enviado em ${supportChannel}!`, 
-          flags: MessageFlags.Ephemeral 
+        await interaction.editReply({ 
+          content: `✅ Painel de suporte enviado em ${supportChannel}!`
         });
       } catch (error) {
         console.error('Erro ao enviar painel de suporte:', error);
-        if (!interaction.replied && !interaction.deferred) {
-          await interaction.reply({ content: '❌ Erro ao enviar painel de suporte.', flags: MessageFlags.Ephemeral }).catch(() => {});
-        }
+        await interaction.editReply({ content: '❌ Erro ao enviar painel de suporte.' }).catch(() => {});
       }
       return;
     }
@@ -993,32 +992,36 @@ client.on('interactionCreate', async (interaction) => {
       );
 
       await interaction.showModal(modal);
+      return;
     }
 
     // ----- SUPORTE: Assumir Ticket -----
     if (customId === 'support_claim') {
-      // Verificar se é membro do suporte
-      if (!hasSupportRole(interaction.member)) {
-        return interaction.reply({ 
-          content: '❌ Apenas membros da equipe de suporte podem assumir tickets!', 
-          flags: MessageFlags.Ephemeral 
-        });
-      }
-
       // Recarregar dados do banco
       db = loadData();
 
       // Buscar ticket no banco
       const ticket = db.supportTickets?.find(t => t.channel_id === interaction.channel.id);
       if (!ticket) {
-        return interaction.reply({ content: '❌ Ticket não encontrado no sistema.', flags: MessageFlags.Ephemeral });
+        await interaction.reply({ content: '❌ Ticket não encontrado no sistema.', flags: MessageFlags.Ephemeral });
+        return;
+      }
+
+      // Verificar se é membro do suporte
+      if (!hasSupportRole(interaction.member)) {
+        await interaction.reply({ 
+          content: '❌ Apenas membros da equipe de suporte podem assumir tickets!', 
+          flags: MessageFlags.Ephemeral 
+        });
+        return;
       }
 
       if (ticket.claimed_by) {
-        return interaction.reply({ 
+        await interaction.reply({ 
           content: `❌ Este ticket já foi assumido por <@${ticket.claimed_by}>!`, 
           flags: MessageFlags.Ephemeral 
         });
+        return;
       }
 
       // Atualizar ticket
@@ -1059,6 +1062,7 @@ client.on('interactionCreate', async (interaction) => {
 
       await interaction.update({ embeds: [embed], components: [buttons] });
       await interaction.channel.send({ content: `✅ ${interaction.user} assumiu este ticket!` });
+      return;
     }
 
     // ----- SUPORTE: Chamar Suporte -----
@@ -1069,20 +1073,23 @@ client.on('interactionCreate', async (interaction) => {
       // Buscar ticket no banco
       const ticket = db.supportTickets?.find(t => t.channel_id === interaction.channel.id);
       if (!ticket) {
-        return interaction.reply({ content: '❌ Ticket não encontrado no sistema.', flags: MessageFlags.Ephemeral });
+        await interaction.reply({ content: '❌ Ticket não encontrado no sistema.', flags: MessageFlags.Ephemeral });
+        return;
       }
 
       // Apenas quem abriu pode chamar suporte
       if (interaction.user.id !== ticket.user_id) {
-        return interaction.reply({ 
+        await interaction.reply({ 
           content: '❌ Apenas quem abriu o ticket pode usar este botão!', 
           flags: MessageFlags.Ephemeral 
         });
+        return;
       }
 
       await interaction.reply({ 
         content: `📢 **Chamando suporte!**\n${SUPPORT_ROLES.map(r => `<@&${r}>`).join(' ')}\n\n<@${ticket.user_id}> está solicitando ajuda!` 
       });
+      return;
     }
 
     // ----- SUPORTE: Fechar Ticket -----
@@ -1093,15 +1100,17 @@ client.on('interactionCreate', async (interaction) => {
       // Buscar ticket no banco
       const ticket = db.supportTickets?.find(t => t.channel_id === interaction.channel.id);
       if (!ticket) {
-        return interaction.reply({ content: '❌ Ticket não encontrado no sistema.', flags: MessageFlags.Ephemeral });
+        await interaction.reply({ content: '❌ Ticket não encontrado no sistema.', flags: MessageFlags.Ephemeral });
+        return;
       }
 
       // Apenas suporte pode fechar
       if (!hasSupportRole(interaction.member)) {
-        return interaction.reply({ 
+        await interaction.reply({ 
           content: '❌ Apenas membros da equipe de suporte podem fechar tickets!', 
           flags: MessageFlags.Ephemeral 
         });
+        return;
       }
 
       // Embed de confirmação
@@ -1123,16 +1132,18 @@ client.on('interactionCreate', async (interaction) => {
         );
 
       await interaction.reply({ embeds: [confirmEmbed], components: [confirmRow] });
+      return;
     }
 
     // ----- SUPORTE: Confirmar Fechamento -----
     if (customId === 'support_close_confirm') {
       // Verificar permissão
       if (!hasSupportRole(interaction.member)) {
-        return interaction.reply({ 
+        await interaction.reply({ 
           content: '❌ Apenas membros da equipe de suporte podem fechar tickets!', 
           flags: MessageFlags.Ephemeral 
         });
+        return;
       }
 
       // Recarregar dados do banco
@@ -1185,11 +1196,13 @@ client.on('interactionCreate', async (interaction) => {
           console.error('Erro ao deletar canal do ticket:', e);
         }
       }, 5000);
+      return;
     }
 
     // ----- SUPORTE: Cancelar Fechamento -----
     if (customId === 'support_close_cancel') {
       await interaction.update({ content: '❌ Fechamento cancelado.', embeds: [], components: [] });
+      return;
     }
 
     // ----- Confirmar Delete -----
