@@ -531,8 +531,11 @@ client.once('clientReady', async () => {
   `);
   
   try {
-    await client.application.commands.set(commands);
-    console.log('✅ Comandos registrados: /painelvendas, /painelsuporte');
+    // Registrar comandos em cada servidor (aparece instantaneamente)
+    for (const guild of client.guilds.cache.values()) {
+      await guild.commands.set(commands);
+      console.log(`✅ Comandos registrados no servidor: ${guild.name}`);
+    }
   } catch (error) {
     console.error('❌ Erro ao registrar comandos:', error);
   }
