@@ -39,6 +39,11 @@ server.listen(PORT, () => {
 const GUILD_ID = process.env.GUILD_ID;
 const ADMIN_ROLES = process.env.ADMIN_ROLES?.split(',') || [];
 
+// ==================== CONFIGURAÇÕES SISTEMA DE SUPORTE ====================
+const SUPPORT_CHANNEL_ID = '1459394113421185087'; // Canal onde fica o painel de suporte
+const SUPPORT_CATEGORY_ID = '1452524577581433034'; // Categoria onde os tickets são criados
+const SUPPORT_ROLES = ['1452818415935819776', '1453187121870540800']; // Cargos de suporte
+
 // ==================== BANCO DE DADOS JSON ====================
 const DATA_FILE = path.join(__dirname, '..', 'data.json');
 
@@ -50,7 +55,7 @@ function loadData() {
   } catch (error) {
     console.error('Erro ao carregar dados:', error);
   }
-  return { products: [], nextId: 1, config: {}, tickets: [] };
+  return { products: [], nextId: 1, config: {}, tickets: [], supportTickets: [], nextSupportTicketId: 1 };
 }
 
 function saveData(data) {
@@ -118,6 +123,10 @@ const commands = [
   new SlashCommandBuilder()
     .setName('painelvendas')
     .setDescription('Abrir painel de gerenciamento da loja')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName('painelsuporte')
+    .setDescription('Enviar painel de suporte no canal configurado')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
 ];
 
@@ -215,6 +224,10 @@ function createAdminPanel() {
       new ButtonBuilder()
         .setCustomId('admin_tickets')
         .setLabel('🎫 Ver Tickets')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('admin_support_tickets')
+        .setLabel('🆘 Tickets Suporte')
         .setStyle(ButtonStyle.Secondary)
     );
 
@@ -315,6 +328,155 @@ async function createTicket(guild, user, product) {
   }
 }
 
+// ==================== SISTEMA DE SUPORTE ====================
+
+// Criar painel de suporte
+function createSupportPanelEmbed() {
+  const embed = new EmbedBuilder()
+    .setTitle('🎫 Central de Suporte')
+    .setDescription('Precisa de ajuda? Clique no botão abaixo para abrir um ticket de suporte!\n\n' +
+      '**📋 Regras:**\n' +
+      '• Descreva seu problema detalhadamente\n' +
+      '• Aguarde um membro da equipe responder\n' +
+      '• Não abra múltiplos tickets para o mesmo assunto\n' +
+      '• Seja educado e paciente')
+    .setColor(0x5865F2)
+    .setFooter({ text: '🏪 INFINITY VENDAS • Suporte' })
+    .setTimestamp();
+
+  const row = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId('support_open_ticket')
+        .setLabel('📩 Abrir Ticket')
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji('🎫')
+    );
+
+  return { embed, components: [row] };
+}
+
+// Criar ticket de suporte
+async function createSupportTicket(guild, user, subject) {
+  try {
+    // Verificar se já tem ticket aberto
+    if (!db.supportTickets) db.supportTickets = [];
+    const existingTicket = db.supportTickets.find(t => t.user_id === user.id && !t.closed);
+    if (existingTicket) {
+      return { error: 'already_open', channel_id: existingTicket.channel_id };
+    }
+
+    // Gerar número do ticket
+    if (!db.nextSupportTicketId) db.nextSupportTicketId = 1;
+    const ticketNumber = db.nextSupportTicketId++;
+    saveData(db);
+
+    // Permissões do ticket
+    const permissionOverwrites = [
+      {
+        id: guild.id, // @everyone
+        deny: [PermissionsBitField.Flags.ViewChannel]
+      },
+      {
+        id: user.id, // Usuário que abriu
+        allow: [
+          PermissionsBitField.Flags.ViewChannel,
+          PermissionsBitField.Flags.SendMessages,
+          PermissionsBitField.Flags.ReadMessageHistory,
+          PermissionsBitField.Flags.AttachFiles,
+          PermissionsBitField.Flags.EmbedLinks
+        ]
+      }
+    ];
+
+    // Adicionar cargos de suporte
+    for (const roleId of SUPPORT_ROLES) {
+      if (roleId && roleId.trim()) {
+        permissionOverwrites.push({
+          id: roleId.trim(),
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory,
+            PermissionsBitField.Flags.AttachFiles,
+            PermissionsBitField.Flags.EmbedLinks,
+            PermissionsBitField.Flags.ManageChannels,
+            PermissionsBitField.Flags.ManageMessages
+          ]
+        });
+      }
+    }
+
+    // Criar canal do ticket na categoria especificada
+    const ticketChannel = await guild.channels.create({
+      name: `🎫│ticket-${ticketNumber}`,
+      type: ChannelType.GuildText,
+      parent: SUPPORT_CATEGORY_ID,
+      permissionOverwrites
+    });
+
+    // Embed do ticket
+    const embed = new EmbedBuilder()
+      .setTitle(`🎫 Ticket de Suporte #${ticketNumber}`)
+      .setDescription(`Olá ${user}! Bem-vindo ao suporte.\n\nDescreva seu problema detalhadamente e aguarde um membro da equipe.`)
+      .setColor(0x5865F2)
+      .addFields(
+        { name: '👤 Aberto por', value: `${user}`, inline: true },
+        { name: '📋 Assunto', value: subject || 'Não especificado', inline: true },
+        { name: '📅 Data', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
+        { name: '🔓 Status', value: '`Aguardando Atendimento`', inline: true },
+        { name: '👨‍💼 Atendente', value: '`Nenhum`', inline: true }
+      )
+      .setFooter({ text: '🏪 INFINITY VENDAS • Suporte' })
+      .setTimestamp();
+
+    const buttons = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId('support_claim')
+          .setLabel('👋 Assumir Ticket')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('support_call')
+          .setLabel('📢 Chamar Suporte')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId('support_close')
+          .setLabel('🔒 Fechar Ticket')
+          .setStyle(ButtonStyle.Danger)
+      );
+
+    const message = await ticketChannel.send({ 
+      content: `${user} | Equipe de Suporte: ${SUPPORT_ROLES.map(r => `<@&${r}>`).join(' ')}`,
+      embeds: [embed], 
+      components: [buttons] 
+    });
+
+    // Salvar ticket no banco
+    db.supportTickets.push({
+      id: ticketNumber,
+      channel_id: ticketChannel.id,
+      message_id: message.id,
+      user_id: user.id,
+      subject: subject || 'Não especificado',
+      claimed_by: null,
+      created_at: new Date().toISOString(),
+      closed: false
+    });
+    saveData(db);
+
+    return { success: true, channel: ticketChannel, ticketNumber };
+  } catch (error) {
+    console.error('Erro ao criar ticket de suporte:', error);
+    return { error: 'create_failed' };
+  }
+}
+
+// Verificar se usuário tem cargo de suporte
+function hasSupportRole(member) {
+  return SUPPORT_ROLES.some(roleId => member.roles.cache.has(roleId));
+}
+
 // ==================== ENVIAR PRODUTO NO CANAL ====================
 async function sendProductToChannel(product, channel) {
   try {
@@ -379,6 +541,29 @@ client.on('interactionCreate', async (interaction) => {
   if (interaction.isChatInputCommand() && interaction.commandName === 'painelvendas') {
     const panel = createAdminPanel();
     await interaction.reply({ embeds: [panel.embed], components: panel.components, flags: MessageFlags.Ephemeral });
+  }
+
+  // ========== COMANDO /painelsuporte ==========
+  if (interaction.isChatInputCommand() && interaction.commandName === 'painelsuporte') {
+    try {
+      const supportChannel = await interaction.guild.channels.fetch(SUPPORT_CHANNEL_ID).catch(() => null);
+      if (!supportChannel) {
+        return interaction.reply({ 
+          content: `❌ Canal de suporte não encontrado! Verifique o ID: \`${SUPPORT_CHANNEL_ID}\``, 
+          flags: MessageFlags.Ephemeral 
+        });
+      }
+
+      const panel = createSupportPanelEmbed();
+      await supportChannel.send({ embeds: [panel.embed], components: panel.components });
+      await interaction.reply({ 
+        content: `✅ Painel de suporte enviado em ${supportChannel}!`, 
+        flags: MessageFlags.Ephemeral 
+      });
+    } catch (error) {
+      console.error('Erro ao enviar painel de suporte:', error);
+      await interaction.reply({ content: '❌ Erro ao enviar painel de suporte.', flags: MessageFlags.Ephemeral });
+    }
   }
 
   // ========== BOTÕES ==========
@@ -586,6 +771,27 @@ client.on('interactionCreate', async (interaction) => {
       await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 
+    // ----- PAINEL ADMIN: Ver Tickets de Suporte -----
+    if (customId === 'admin_support_tickets') {
+      const supportTickets = db.supportTickets || [];
+      const openTickets = supportTickets.filter(t => !t.closed);
+
+      if (openTickets.length === 0) {
+        return interaction.reply({ content: '🆘 Nenhum ticket de suporte aberto no momento.', flags: MessageFlags.Ephemeral });
+      }
+
+      const embed = new EmbedBuilder()
+        .setTitle('🆘 Tickets de Suporte Abertos')
+        .setColor(0x5865F2)
+        .setDescription(openTickets.map(t => {
+          const status = t.claimed_by ? `✅ Assumido por <@${t.claimed_by}>` : '⏳ Aguardando';
+          return `**#${t.id}** • <#${t.channel_id}>\n└ 👤 <@${t.user_id}> • ${status}`;
+        }).join('\n\n'))
+        .setFooter({ text: `Total: ${openTickets.length} tickets abertos` });
+
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+    }
+
     // ----- COMPRAR PRODUTO -----
     if (customId.startsWith('buy_')) {
       const productId = customId.split('_')[1];
@@ -735,6 +941,223 @@ client.on('interactionCreate', async (interaction) => {
           console.error('Erro ao deletar canal:', e);
         }
       }, 2000);
+    }
+
+    // ==================== BOTÕES DO SISTEMA DE SUPORTE ====================
+
+    // ----- SUPORTE: Abrir Ticket -----
+    if (customId === 'support_open_ticket') {
+      const modal = new ModalBuilder()
+        .setCustomId('modal_support_ticket')
+        .setTitle('🎫 Abrir Ticket de Suporte');
+
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('subject')
+            .setLabel('Assunto do Ticket')
+            .setPlaceholder('Ex: Problema com compra, Dúvida sobre produto...')
+            .setStyle(TextInputStyle.Short)
+            .setMaxLength(100)
+            .setRequired(true)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('description')
+            .setLabel('Descreva seu problema')
+            .setPlaceholder('Descreva detalhadamente o que você precisa de ajuda...')
+            .setStyle(TextInputStyle.Paragraph)
+            .setMaxLength(1000)
+            .setRequired(true)
+        )
+      );
+
+      await interaction.showModal(modal);
+    }
+
+    // ----- SUPORTE: Assumir Ticket -----
+    if (customId === 'support_claim') {
+      // Verificar se é membro do suporte
+      if (!hasSupportRole(interaction.member)) {
+        return interaction.reply({ 
+          content: '❌ Apenas membros da equipe de suporte podem assumir tickets!', 
+          flags: MessageFlags.Ephemeral 
+        });
+      }
+
+      // Buscar ticket no banco
+      const ticket = db.supportTickets?.find(t => t.channel_id === interaction.channel.id);
+      if (!ticket) {
+        return interaction.reply({ content: '❌ Ticket não encontrado no sistema.', flags: MessageFlags.Ephemeral });
+      }
+
+      if (ticket.claimed_by) {
+        return interaction.reply({ 
+          content: `❌ Este ticket já foi assumido por <@${ticket.claimed_by}>!`, 
+          flags: MessageFlags.Ephemeral 
+        });
+      }
+
+      // Atualizar ticket
+      ticket.claimed_by = interaction.user.id;
+      saveData(db);
+
+      // Atualizar embed
+      const embed = new EmbedBuilder()
+        .setTitle(`🎫 Ticket de Suporte #${ticket.id}`)
+        .setDescription(`Ticket assumido por ${interaction.user}!\n\nDescreva seu problema detalhadamente.`)
+        .setColor(0x57F287)
+        .addFields(
+          { name: '👤 Aberto por', value: `<@${ticket.user_id}>`, inline: true },
+          { name: '📋 Assunto', value: ticket.subject || 'Não especificado', inline: true },
+          { name: '📅 Data', value: `<t:${Math.floor(new Date(ticket.created_at).getTime() / 1000)}:F>`, inline: true },
+          { name: '🔓 Status', value: '`Em Atendimento`', inline: true },
+          { name: '👨‍💼 Atendente', value: `${interaction.user}`, inline: true }
+        )
+        .setFooter({ text: '🏪 INFINITY VENDAS • Suporte' })
+        .setTimestamp();
+
+      const buttons = new ActionRowBuilder()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId('support_claim')
+            .setLabel('👋 Assumir Ticket')
+            .setStyle(ButtonStyle.Success)
+            .setDisabled(true),
+          new ButtonBuilder()
+            .setCustomId('support_call')
+            .setLabel('📢 Chamar Suporte')
+            .setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setCustomId('support_close')
+            .setLabel('🔒 Fechar Ticket')
+            .setStyle(ButtonStyle.Danger)
+        );
+
+      await interaction.update({ embeds: [embed], components: [buttons] });
+      await interaction.channel.send({ content: `✅ ${interaction.user} assumiu este ticket!` });
+    }
+
+    // ----- SUPORTE: Chamar Suporte -----
+    if (customId === 'support_call') {
+      // Buscar ticket no banco
+      const ticket = db.supportTickets?.find(t => t.channel_id === interaction.channel.id);
+      if (!ticket) {
+        return interaction.reply({ content: '❌ Ticket não encontrado no sistema.', flags: MessageFlags.Ephemeral });
+      }
+
+      // Apenas quem abriu pode chamar suporte
+      if (interaction.user.id !== ticket.user_id) {
+        return interaction.reply({ 
+          content: '❌ Apenas quem abriu o ticket pode usar este botão!', 
+          flags: MessageFlags.Ephemeral 
+        });
+      }
+
+      await interaction.reply({ 
+        content: `📢 **Chamando suporte!**\n${SUPPORT_ROLES.map(r => `<@&${r}>`).join(' ')}\n\n<@${ticket.user_id}> está solicitando ajuda!` 
+      });
+    }
+
+    // ----- SUPORTE: Fechar Ticket -----
+    if (customId === 'support_close') {
+      // Buscar ticket no banco
+      const ticket = db.supportTickets?.find(t => t.channel_id === interaction.channel.id);
+      if (!ticket) {
+        return interaction.reply({ content: '❌ Ticket não encontrado no sistema.', flags: MessageFlags.Ephemeral });
+      }
+
+      // Apenas suporte pode fechar
+      if (!hasSupportRole(interaction.member)) {
+        return interaction.reply({ 
+          content: '❌ Apenas membros da equipe de suporte podem fechar tickets!', 
+          flags: MessageFlags.Ephemeral 
+        });
+      }
+
+      // Embed de confirmação
+      const confirmEmbed = new EmbedBuilder()
+        .setTitle('⚠️ Confirmar Fechamento')
+        .setDescription('Tem certeza que deseja fechar este ticket?\nEsta ação não pode ser desfeita.')
+        .setColor(0xED4245);
+
+      const confirmRow = new ActionRowBuilder()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId('support_close_confirm')
+            .setLabel('✅ Confirmar')
+            .setStyle(ButtonStyle.Danger),
+          new ButtonBuilder()
+            .setCustomId('support_close_cancel')
+            .setLabel('❌ Cancelar')
+            .setStyle(ButtonStyle.Secondary)
+        );
+
+      await interaction.reply({ embeds: [confirmEmbed], components: [confirmRow] });
+    }
+
+    // ----- SUPORTE: Confirmar Fechamento -----
+    if (customId === 'support_close_confirm') {
+      // Verificar permissão
+      if (!hasSupportRole(interaction.member)) {
+        return interaction.reply({ 
+          content: '❌ Apenas membros da equipe de suporte podem fechar tickets!', 
+          flags: MessageFlags.Ephemeral 
+        });
+      }
+
+      // Buscar e atualizar ticket
+      const ticketIndex = db.supportTickets?.findIndex(t => t.channel_id === interaction.channel.id);
+      if (ticketIndex > -1) {
+        db.supportTickets[ticketIndex].closed = true;
+        db.supportTickets[ticketIndex].closed_at = new Date().toISOString();
+        db.supportTickets[ticketIndex].closed_by = interaction.user.id;
+        saveData(db);
+      }
+
+      const ticket = db.supportTickets[ticketIndex];
+
+      // Log de fechamento
+      if (db.config?.logs_channel) {
+        try {
+          const logsChannel = await client.channels.fetch(db.config.logs_channel);
+          const logEmbed = new EmbedBuilder()
+            .setTitle('🔒 Ticket de Suporte Fechado')
+            .setColor(0xED4245)
+            .addFields(
+              { name: '🎫 Ticket', value: `#${ticket?.id || 'N/A'}`, inline: true },
+              { name: '👤 Aberto por', value: `<@${ticket?.user_id}>`, inline: true },
+              { name: '👨‍💼 Fechado por', value: `${interaction.user}`, inline: true },
+              { name: '📋 Assunto', value: ticket?.subject || 'N/A', inline: false }
+            )
+            .setTimestamp();
+
+          await logsChannel.send({ embeds: [logEmbed] });
+        } catch (e) {
+          console.error('Erro ao enviar log:', e);
+        }
+      }
+
+      const closedEmbed = new EmbedBuilder()
+        .setTitle('🔒 Ticket Fechado')
+        .setDescription(`Este ticket foi fechado por ${interaction.user}.\nO canal será deletado em 5 segundos.`)
+        .setColor(0xED4245)
+        .setTimestamp();
+
+      await interaction.update({ embeds: [closedEmbed], components: [] });
+
+      setTimeout(async () => {
+        try {
+          await interaction.channel.delete();
+        } catch (e) {
+          console.error('Erro ao deletar canal do ticket:', e);
+        }
+      }, 5000);
+    }
+
+    // ----- SUPORTE: Cancelar Fechamento -----
+    if (customId === 'support_close_cancel') {
+      await interaction.update({ content: '❌ Fechamento cancelado.', embeds: [], components: [] });
     }
 
     // ----- Confirmar Delete -----
@@ -990,6 +1413,40 @@ client.on('interactionCreate', async (interaction) => {
       saveData(db);
 
       await interaction.reply({ content: `✅ Canal de logs definido para <#${channelId}>!`, flags: MessageFlags.Ephemeral });
+    }
+
+    // ----- Modal: Ticket de Suporte -----
+    if (customId === 'modal_support_ticket') {
+      const subject = interaction.fields.getTextInputValue('subject');
+      const description = interaction.fields.getTextInputValue('description');
+
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+      const result = await createSupportTicket(interaction.guild, interaction.user, subject);
+
+      if (result.error === 'already_open') {
+        return interaction.editReply({ 
+          content: `❌ Você já possui um ticket aberto! Acesse <#${result.channel_id}>` 
+        });
+      }
+
+      if (result.error === 'create_failed') {
+        return interaction.editReply({ content: '❌ Erro ao criar ticket. Tente novamente.' });
+      }
+
+      // Enviar mensagem inicial com a descrição do problema
+      const descEmbed = new EmbedBuilder()
+        .setTitle('📝 Descrição do Problema')
+        .setDescription(description)
+        .setColor(0x5865F2)
+        .setFooter({ text: `Enviado por ${interaction.user.username}` })
+        .setTimestamp();
+
+      await result.channel.send({ embeds: [descEmbed] });
+
+      await interaction.editReply({ 
+        content: `✅ Ticket #${result.ticketNumber} criado com sucesso!\nAcesse: ${result.channel}` 
+      });
     }
   }
 });
