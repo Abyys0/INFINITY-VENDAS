@@ -20,6 +20,15 @@ const {
 const fs = require('fs');
 const path = require('path');
 
+// ==================== HANDLER DE ERROS GLOBAL ====================
+process.on('unhandledRejection', (error) => {
+  console.error('❌ Unhandled Rejection:', error.message || error);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error.message || error);
+});
+
 // ==================== SERVIDOR HTTP PARA RENDER ====================
 const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => {
@@ -523,7 +532,7 @@ client.once('clientReady', async () => {
   
   try {
     await client.application.commands.set(commands);
-    console.log('✅ Comando /painelvendas registrado!');
+    console.log('✅ Comandos registrados: /painelvendas, /painelsuporte');
   } catch (error) {
     console.error('❌ Erro ao registrar comandos:', error);
   }
@@ -536,35 +545,39 @@ client.once('clientReady', async () => {
 
 // ==================== HANDLER DE INTERAÇÕES ====================
 client.on('interactionCreate', async (interaction) => {
+  try {
+    // ========== COMANDO /painelvendas ==========
+    if (interaction.isChatInputCommand() && interaction.commandName === 'painelvendas') {
+      const panel = createAdminPanel();
+      await interaction.reply({ embeds: [panel.embed], components: panel.components, flags: MessageFlags.Ephemeral });
+      return;
+    }
 
-  // ========== COMANDO /painelvendas ==========
-  if (interaction.isChatInputCommand() && interaction.commandName === 'painelvendas') {
-    const panel = createAdminPanel();
-    await interaction.reply({ embeds: [panel.embed], components: panel.components, flags: MessageFlags.Ephemeral });
-  }
+    // ========== COMANDO /painelsuporte ==========
+    if (interaction.isChatInputCommand() && interaction.commandName === 'painelsuporte') {
+      try {
+        const supportChannel = await interaction.guild.channels.fetch(SUPPORT_CHANNEL_ID).catch(() => null);
+        if (!supportChannel) {
+          return interaction.reply({ 
+            content: `❌ Canal de suporte não encontrado! Verifique o ID: \`${SUPPORT_CHANNEL_ID}\``, 
+            flags: MessageFlags.Ephemeral 
+          });
+        }
 
-  // ========== COMANDO /painelsuporte ==========
-  if (interaction.isChatInputCommand() && interaction.commandName === 'painelsuporte') {
-    try {
-      const supportChannel = await interaction.guild.channels.fetch(SUPPORT_CHANNEL_ID).catch(() => null);
-      if (!supportChannel) {
-        return interaction.reply({ 
-          content: `❌ Canal de suporte não encontrado! Verifique o ID: \`${SUPPORT_CHANNEL_ID}\``, 
+        const panel = createSupportPanelEmbed();
+        await supportChannel.send({ embeds: [panel.embed], components: panel.components });
+        await interaction.reply({ 
+          content: `✅ Painel de suporte enviado em ${supportChannel}!`, 
           flags: MessageFlags.Ephemeral 
         });
+      } catch (error) {
+        console.error('Erro ao enviar painel de suporte:', error);
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({ content: '❌ Erro ao enviar painel de suporte.', flags: MessageFlags.Ephemeral }).catch(() => {});
+        }
       }
-
-      const panel = createSupportPanelEmbed();
-      await supportChannel.send({ embeds: [panel.embed], components: panel.components });
-      await interaction.reply({ 
-        content: `✅ Painel de suporte enviado em ${supportChannel}!`, 
-        flags: MessageFlags.Ephemeral 
-      });
-    } catch (error) {
-      console.error('Erro ao enviar painel de suporte:', error);
-      await interaction.reply({ content: '❌ Erro ao enviar painel de suporte.', flags: MessageFlags.Ephemeral });
+      return;
     }
-  }
 
   // ========== BOTÕES ==========
   if (interaction.isButton()) {
@@ -1447,6 +1460,20 @@ client.on('interactionCreate', async (interaction) => {
       await interaction.editReply({ 
         content: `✅ Ticket #${result.ticketNumber} criado com sucesso!\nAcesse: ${result.channel}` 
       });
+    }
+  }
+
+  } catch (error) {
+    console.error('Erro no handler de interação:', error);
+    // Tentar responder apenas se ainda não respondeu
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: '❌ Ocorreu um erro ao processar sua solicitação.', flags: MessageFlags.Ephemeral });
+      } else if (interaction.deferred && !interaction.replied) {
+        await interaction.editReply({ content: '❌ Ocorreu um erro ao processar sua solicitação.' });
+      }
+    } catch (e) {
+      // Ignorar se não conseguir responder (interação já expirou)
     }
   }
 });
