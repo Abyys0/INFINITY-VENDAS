@@ -59,7 +59,11 @@ const DATA_FILE = path.join(__dirname, '..', 'data.json');
 function loadData() {
   try {
     if (fs.existsSync(DATA_FILE)) {
-      return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+      const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+      // Garantir que os campos de suporte existam
+      if (!data.supportTickets) data.supportTickets = [];
+      if (!data.nextSupportTicketId) data.nextSupportTicketId = 1;
+      return data;
     }
   } catch (error) {
     console.error('Erro ao carregar dados:', error);
@@ -1001,6 +1005,9 @@ client.on('interactionCreate', async (interaction) => {
         });
       }
 
+      // Recarregar dados do banco
+      db = loadData();
+
       // Buscar ticket no banco
       const ticket = db.supportTickets?.find(t => t.channel_id === interaction.channel.id);
       if (!ticket) {
@@ -1056,6 +1063,9 @@ client.on('interactionCreate', async (interaction) => {
 
     // ----- SUPORTE: Chamar Suporte -----
     if (customId === 'support_call') {
+      // Recarregar dados do banco
+      db = loadData();
+
       // Buscar ticket no banco
       const ticket = db.supportTickets?.find(t => t.channel_id === interaction.channel.id);
       if (!ticket) {
@@ -1077,6 +1087,9 @@ client.on('interactionCreate', async (interaction) => {
 
     // ----- SUPORTE: Fechar Ticket -----
     if (customId === 'support_close') {
+      // Recarregar dados do banco
+      db = loadData();
+
       // Buscar ticket no banco
       const ticket = db.supportTickets?.find(t => t.channel_id === interaction.channel.id);
       if (!ticket) {
@@ -1121,6 +1134,9 @@ client.on('interactionCreate', async (interaction) => {
           flags: MessageFlags.Ephemeral 
         });
       }
+
+      // Recarregar dados do banco
+      db = loadData();
 
       // Buscar e atualizar ticket
       const ticketIndex = db.supportTickets?.findIndex(t => t.channel_id === interaction.channel.id);
